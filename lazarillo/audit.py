@@ -17,8 +17,8 @@ import tomllib
 from collections import deque
 from pathlib import Path
 
-from . import jsonio
-from .config import ALLOWED_AXIOMS, lean_env
+from . import jsonio, kernels
+from .config import ALLOWED_AXIOMS, ConfigError, lean_env
 from .core import CoreError, load_graph
 from .graph import GraphError, Olean, run_extractor
 
@@ -27,6 +27,8 @@ REFERENCE_DIR = "reference"
 REFERENCE_SOURCE = "reference/Reference.lean"
 REFERENCE_EXPORT = "reference/reference.ndjson"
 REFERENCE_MODULE = "LazarilloRef"
+COMPARATOR_CONFIG = "reference/comparator.json"
+COMPARATOR_REPORT = "reference/comparator.report.json"
 TRUSTED_ROOTS = ("Mathlib", "Init", "Std", "Lean")
 
 NATIVE_MARKERS = ("native", "ofReduceBool", "ofReduceNat", "trustCompiler")
@@ -327,10 +329,53 @@ def prepare_reference(args, project: Path, out: Path) -> list[str]:
     return imports_of(strip_comments(dest.read_text(encoding="utf-8")))
 
 
-def judge_reference(project: Path, out: Path, target: str, env: dict):
-    """Comparator verdict of the reference against `core.ndjson` (CONTRACT §5); exports the
-    reference to `reference/reference.ndjson` with roots R. Completed in k1-05."""
-    return None
+def lean_path_exporter(exporter: list[str], extra: Path) -> list[str]:
+    """`exporter` with `extra` prepended to `LEAN_PATH` inside `lake env` (RESEARCH §3.5)."""
+    wrap = ["sh", "-c", 'LEAN_PATH="$0${LEAN_PATH:+:$LEAN_PATH}" exec "$@"', str(extra)]
+    if exporter[:2] == ["lake", "env"]:
+        return ["lake", "env", *wrap, *exporter[2:]]
+    return [*wrap, *exporter]
+
+
+def export_reference(project: Path, out: Path, target: str, env: dict) -> None:
+    """`reference/reference.ndjson`: the reference module exported with roots R."""
+    roots, dropped = kernels.split_roots(target, kernels.read_declared_roots(out))
+    if dropped:
+        print(f"lazarillo: audit: roots absent from the environment: {', '.join(dropped)}", file=sys.stderr)
+    exporter = lean_path_exporter(kernels.corpus_exporter(project), out / REFERENCE_DIR)
+    kernels.export(exporter, REFERENCE_MODULE, roots, project, env, out / REFERENCE_EXPORT,
+                   out / "logs" / "audit-reference-export.log")
+
+
+def comparator_config(target: str) -> dict:
+    return {"challenge_module": "Challenge", "solution_module": "Solution",
+            "theorem_names": [target], "permitted_axioms": list(ALLOWED_AXIOMS),
+            "external_kernels": {"nanoda": ["nanoda_bin"]}}
+
+
+def parse_judgement(text: str):
+    """Top-level `judgement` of a `lake comparator --json` report (text from its first `{`)."""
+    try:
+        data = json.loads(text[text.index("{"):])
+    except ValueError:
+        return None
+    return data.get("judgement") if isinstance(data, dict) else None
+
+
+def judge_reference(out: Path, target: str) -> dict:
+    """Comparator verdict of the reference export against `core.ndjson` in the judge (CONTRACT §5)."""
+    cfg = out / COMPARATOR_CONFIG
+    jsonio.write_json(cfg, comparator_config(target))
+    vbin = kernels.verification_bin()
+    report = out / COMPARATOR_REPORT
+    code = kernels.run_logged(
+        [vbin / "lake", "comparator", "--config", cfg,
+         f"--challenge-from-export={out / REFERENCE_EXPORT}",
+         f"--solution-from-export={out / kernels.CORE_EXPORT}", "--json"],
+        kernels.judge_dir(), kernels.judge_env(vbin), out / "logs" / "audit-comparator.log",
+        stdout_path=report)
+    return {"exit": code, "judgement": parse_judgement(report.read_text(encoding="utf-8", errors="replace")),
+            "report": COMPARATOR_REPORT}
 
 
 # --- stage -----------------------------------------------------------------------
@@ -346,10 +391,11 @@ def audit_json(args, nodes: dict[str, dict], project: Path, out: Path, env=None)
         env = env if env is not None else lean_env()
         imports = prepare_reference(args, project, out)
         diff = frontier_diff(nodes, front, compile_reference(project, out, env))
+        export_reference(project, out, target, env)
         reference = {"source": REFERENCE_SOURCE, "imports": imports,
                      "export": REFERENCE_EXPORT, "module": REFERENCE_MODULE}
-        if (out / "core.ndjson").is_file():
-            comparator = judge_reference(project, out, target, env)
+        if (out / kernels.CORE_EXPORT).is_file():
+            comparator = judge_reference(out, target)
     return {
         "format": AUDIT_FORMAT,
         "target": target,
@@ -372,7 +418,7 @@ def run_audit(args) -> int:
     project = Path(args.project_dir).resolve()
     try:
         data = audit_json(args, load_graph(out / "graph.ndjson"), project, out)
-    except (AuditError, CoreError) as e:
+    except (AuditError, CoreError, kernels.KernelsError, ConfigError) as e:
         print(f"lazarillo: audit: {e}", file=sys.stderr)
         return 1
     jsonio.write_json(out / "audit.json", data)

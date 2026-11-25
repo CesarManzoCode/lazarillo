@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import jsonio
-from .config import REPO, ConfigError, elan_home, lean_env, toolchain_dir_name
+from .config import ALLOWED_AXIOMS, KERNEL_ROOTS, REPO, ConfigError, elan_home, lean_env, toolchain_dir_name
 
 EXTRACT_LEAN = REPO / "lean" / "Extract.lean"
 MAX_BATCH_MODULES = 1000
 MAX_BATCH_BYTES = 2 << 30
 OLEAN_PARTS = ("", ".server", ".private")
+# Export roots besides the target that are declared somewhere (read by the kernels stage).
+DECLARED_ROOTS = "work/graph/declared_roots.txt"
 
 KINDS = ("axiom", "def", "thm", "opaque", "quot", "inductive", "ctor", "rec")
 _KIND_CODE = {k: i for i, k in enumerate(KINDS)}
@@ -263,6 +265,10 @@ class Graph:
         for r in sorted(records, key=self.name_of):
             yield self.row(r)
 
+    def declared(self, name: str) -> bool:
+        nid = self._ids.get(name)
+        return nid is not None and self.decl[nid] != NO_DECL
+
     def project_decls(self) -> list[str]:
         return sorted(self.name_of(r) for r in range(len(self)) if not self.rec_flags[r] & _TRUSTED)
 
@@ -270,6 +276,9 @@ class Graph:
 def write_outputs(graph: Graph, target: str, out: Path) -> None:
     jsonio.write_ndjson(out / "graph.ndjson", graph.rows(graph.closure(target)))
     jsonio.write_lines(out / "project_decls.txt", graph.project_decls())
+    roots = out / DECLARED_ROOTS
+    roots.parent.mkdir(parents=True, exist_ok=True)
+    jsonio.write_lines(roots, [r for r in ALLOWED_AXIOMS + KERNEL_ROOTS if graph.declared(r)])
 
 
 def build_graph(project: Path, target: str, out: Path, tc_lib: Path | None = None,

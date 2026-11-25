@@ -10,6 +10,10 @@ CORPORA_TOML = REPO / "corpora.toml"
 
 STAGES = ("graph", "core", "kernels", "audit", "tree")
 ALLOWED_AXIOMS = ("propext", "Quot.sound", "Classical.choice")
+# Constants that Comparator requires in both exports (CONTRACT §2, RESEARCH §3.4).
+KERNEL_ROOTS = ("semiOutParam", "autoParam", "String.mk", "eagerReduce", "Nat.shiftRight",
+                "Nat.shiftLeft", "Nat.xor", "Nat.lor", "Nat.land", "Nat.gcd", "Nat.add", "Nat.sub",
+                "Nat.mul", "Nat.div", "Nat.mod", "Nat.beq", "Nat.ble", "Nat.pow", "Nat.log2")
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
