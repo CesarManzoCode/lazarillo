@@ -7,7 +7,8 @@ Decisions inside the contract:
   the whole environment, nested environments included. Several environments with the same
   label merge their names and edges.
 - A following `proof` belongs to the last labelled top-level environment of the same file;
-  unlabelled environments in between do not break the link, a new file does.
+  unlabelled environments in between do not break the link, a new file does. A `proof` is
+  never a node: a `\\label` inside it (e.g. of a nested `equation`) is ignored.
 - `BE` never contains a self edge `(a, a)`, as `PE` cannot.
 - A missing root (label not in the blueprint, declaration not in the graph or the tree) gives
   empty sets, so the affected values are 0.0; the command still writes `calibration.json`.
@@ -81,13 +82,14 @@ def parse_text(text: str, nodes: dict[str, dict]) -> None:
     """Add the nodes of one file to `nodes`: label -> {"lean": set, "uses": set}."""
     last = None
     for env in top_level_envs(text):
-        if env["label"] is not None:
+        if env["env"] == "proof":
+            if last is not None:
+                nodes[last]["uses"].update(env["uses"])
+        elif env["label"] is not None:
             last = env["label"]
             node = nodes.setdefault(last, {"lean": set(), "uses": set()})
             node["lean"].update(env["lean"])
             node["uses"].update(env["uses"])
-        elif env["env"] == "proof" and last is not None:
-            nodes[last]["uses"].update(env["uses"])
 
 
 def parse_dir(tex_dir) -> dict[str, dict]:

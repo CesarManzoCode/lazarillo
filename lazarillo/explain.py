@@ -148,7 +148,7 @@ def llama_command(binary: str, model: Path, prompt: Path, threads: int) -> list[
             "-t", str(threads), "--temp", str(SAMPLING["temp"]), "--top-p", str(SAMPLING["top_p"]),
             "--top-k", str(SAMPLING["top_k"]), "--min-p", str(SAMPLING["min_p"]),
             "--seed", str(SAMPLING["seed"]), "-no-cnv", "--no-display-prompt", "--offline",
-            "--simple-io", "--log-disable"]
+            "--simple-io"]
 
 
 # --- stage step ------------------------------------------------------------------

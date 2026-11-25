@@ -85,7 +85,7 @@ Todo JSON se escribe con `sort_keys=True`, `ensure_ascii=False`, separadores `("
 ## 6. Explicaciones
 
 - Binario: `$LAZARILLO_LLAMA` o `llama-completion` en `PATH` (paquete Arch `llama-cpp` 1.0.0, R§4). Modelo `work/models/Qwen3-8B-Q4_K_M.gguf` con el sha256 de `corpora.toml`.
-- Invocación por nodo: `llama-completion -m MODEL -f PROMPT -n 400 -c 8192 -t <núcleos> --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0 --seed 0 -no-cnv --no-display-prompt --offline --simple-io --log-disable`.
+- Invocación por nodo: `llama-completion -m MODEL -f PROMPT -n 400 -c 8192 -t <núcleos> --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0 --seed 0 -no-cnv --no-display-prompt --offline --simple-io` (sin `--log-disable`: en 1.0.0 también suprime el texto generado, R§4).
 - Prompt en plantilla de chat de Qwen3 sin razonamiento: `<|im_start|>system\n…<|im_end|>\n<|im_start|>user\n…<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`. El usuario recibe: nombre, tipo impreso, hasta tres estados de meta (primero, central, último) y nombre y tipo de hasta diez hijos. Se pide en inglés, a lo sumo 150 palabras, qué afirma la declaración y cómo procede la prueba, citando las metas.
 - [hipótesis] El modelo de 5.0 GB cabe junto a una etapa de Lean dentro de 16 GB porque las etapas corren en serie; se mide en K2 y K3.
 

@@ -83,7 +83,7 @@ class PromptTest(unittest.TestCase):
         self.assertEqual(cmd, ["/bin/llama", "-m", "/m.gguf", "-f", "/p.txt", "-n", "400", "-c", "8192",
                                "-t", "8", "--temp", "0.7", "--top-p", "0.8", "--top-k", "20",
                                "--min-p", "0", "--seed", "0", "-no-cnv", "--no-display-prompt",
-                               "--offline", "--simple-io", "--log-disable"])
+                               "--offline", "--simple-io"])
 
 
 class ExplainTreeTest(unittest.TestCase):

@@ -12,7 +12,8 @@ from lazarillo import blueprint, jsonio  # noqa: E402
 
 # Two chapters. `ghost` is commented out; `root` takes its `\uses` from the following proof
 # (an unlabelled remark in between does not break the link); `l1` has two Lean names and an
-# escaped `\%`; `m` is a Mathlib name; `off` is outside `B`; `l4` is in `B` but not in the tree.
+# escaped `\%`; the `\label` of an equation inside a proof is not a node; `m` is a Mathlib
+# name; `off` is outside `B`; `l4` is in `B` but not in the tree.
 CHAPTER_A = r"""\chapter{A}
 % \begin{lemma}\label{ghost}\lean{P.ghost}\uses{l4}\end{lemma}
 \begin{theorem}[Main]\label{root}
@@ -30,7 +31,7 @@ CHAPTER_A = r"""\chapter{A}
 CHAPTER_B = r"""\begin{lemma}\label{l2}\lean{P.z}\uses{m, l3}
 \begin{itemize}\item nested \end{itemize}
 \end{lemma}
-\begin{proof}\uses{l4}\end{proof}
+\begin{proof}\uses{l4}\begin{equation}\label{eq1} x \end{equation}\end{proof}
 \begin{lemma}\label{l3}\lean{P.w}\end{lemma}
 \begin{lemma}\label{l4}\lean{P.v}\end{lemma}
 \begin{lemma}\label{off}\lean{P.off}\uses{l3}\end{lemma}
