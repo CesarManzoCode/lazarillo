@@ -82,9 +82,11 @@ def lib_oleans(lib: Path, trusted: bool) -> list[Olean]:
     return sorted(out, key=lambda o: o.module)
 
 
-def discover(project: Path, tc_lib: Path, trusted: set[str]) -> list[Olean]:
+def discover(project: Path, tc_lib: Path, trusted: set[str], last=()) -> list[Olean]:
     """Project modules first (root package, then untrusted packages), then the trusted base
-    (trusted packages, then the toolchain). A module name seen twice keeps its first file."""
+    (trusted packages, then the toolchain). A module name seen twice keeps its first file.
+    Modules in `last` (the challenge module, which restates the target with `sorry`) go at
+    the very end, so a name they redeclare keeps the project's declaration."""
     project = Path(project)
     groups = [lib_oleans(project / ".lake" / "build" / "lib" / "lean", False)]
     packages = project / ".lake" / "packages"
@@ -94,15 +96,15 @@ def discover(project: Path, tc_lib: Path, trusted: set[str]) -> list[Olean]:
     groups += [lib_oleans(d / ".lake" / "build" / "lib" / "lean", True)
                for d in pkg_dirs if d.name in trusted]
     groups.append(lib_oleans(tc_lib, True))
-    seen, out = set(), []
+    seen, out, tail = set(), [], []
     for group in groups:
         for o in group:
             if o.module in seen:
                 print(f"lazarillo: graph: module {o.module} found twice, ignoring {o.path}", file=sys.stderr)
                 continue
             seen.add(o.module)
-            out.append(o)
-    return out
+            (tail if o.module in last else out).append(o)
+    return out + tail
 
 
 def make_batches(oleans, max_modules=MAX_BATCH_MODULES, max_bytes=MAX_BATCH_BYTES) -> list[list[Olean]]:
@@ -282,10 +284,10 @@ def write_outputs(graph: Graph, target: str, out: Path) -> None:
 
 
 def build_graph(project: Path, target: str, out: Path, tc_lib: Path | None = None,
-                extract=run_extractor, env: dict | None = None) -> Graph:
+                extract=run_extractor, env: dict | None = None, challenge_module: str | None = None) -> Graph:
     project, out = Path(project).resolve(), Path(out).resolve()
     oleans = discover(project, tc_lib if tc_lib is not None else toolchain_lib(project),
-                      trusted_packages(project))
+                      trusted_packages(project), (challenge_module,) if challenge_module else ())
     if not any(not o.trusted for o in oleans):
         raise GraphError(f"no project .olean under {project}/.lake (run `lake build`)")
     trusted_of = {o.module: o.trusted for o in oleans}
@@ -311,7 +313,8 @@ def build_graph(project: Path, target: str, out: Path, tc_lib: Path | None = Non
 
 def run_graph(args) -> int:
     try:
-        build_graph(Path(args.project_dir), args.theorem, Path(args.out))
+        build_graph(Path(args.project_dir), args.theorem, Path(args.out),
+                    challenge_module=args.challenge_module)
     except GraphError as e:
         print(f"lazarillo: graph: {e}", file=sys.stderr)
         return 1

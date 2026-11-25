@@ -12,8 +12,15 @@ Fuente única de lo que lazarillo no demuestra. Se amplía con los resultados ne
 - **Explicaciones.** El texto lo escribe un modelo de 8 B parámetros cuantizado; su calidad no se mide mecánicamente y puede contener errores aunque cite metas reales. Solo se generan hasta la profundidad fijada por corpus.
 - **Memoria.** El pico se mide con `/usr/bin/time -v` y con un muestreo cada 200 ms; un pico más corto que el intervalo puede escaparse del muestreo.
 - **RH.** No se exporta su núcleo ni se corre Comparator sobre RH: el export completo pesa 61.6 GB. La fidelidad de RH se limita a axiomas, escaneo de fuentes y frontera semántica. RH no tiene licencia: se publican cifras, no texto derivado.
+- **Constantes `quot`.** El grafo trata `Quot`, `Quot.mk`, `Quot.lift` y `Quot.ind` como un bloque (cada una depende de las otras tres) para que su cuenta coincida con la del exportador, que las escribe juntas. Si el objetivo alcanza una, el grafo cuenta las cuatro aunque no use las demás. Son de la base confiable, así que el núcleo no cambia.
+- **Módulo de reto.** El módulo de reto se lee al final. Si redeclara un nombre del proyecto (en `pfr`, `PFRPalomar.Challenge` y `PFRPalomar.Solution` declaran ambos `Marton.pfr_conjecture`), el grafo y el núcleo usan la declaración del resto del proyecto, y la del reto solo entra en la auditoría como referencia aplanada.
 - **Calibración.** El blueprint de `pfr` es un grafo humano; su divergencia con el grafo de declaraciones es esperable, así que precisión y exhaustividad miden coincidencia, no corrección.
 
 ## Resultados negativos
 
-Todavía no hay mediciones.
+### K1
+
+- **`fetch` sin reintentos.** Cuando falla una descarga, `fetch` corta ese corpus y sale con 1. En K1, con red intermitente, salió con 1 en dos verificaciones de cierre seguidas; una descarga de la toolchain v4.33.0-rc2 murió a los 343 MB. Hay que repetir `fetch` (es idempotente) hasta que salga con 0.
+- **Exportadores ejercitados.** Solo se probaron dos caminos de exportación: `leanexport` de v4.37.0-rc1 (`pfr` y el fixture `mini`) y `lean4export` `v4.33.0-rc2` (`zeta23`). `lean4export` `v4.34.0-rc2` (`ns`) y `leanexport` de v4.35 (`zetalab`, `poincare`) quedan sin probar hasta K3.
+- **Memoria no evaluada en K1.** La verificación de K1 comprueba que `timings.json` coincide con los logs crudos de `/usr/bin/time -v` y del muestreador, no que el pico quede bajo 16 GB. Que cabe en 16 GB se decide en K3.
+- **con-leche sin criterio.** El tercer kernel se corre y su salida queda en `kernels.json`, pero ningún criterio de K1 lo evalúa.

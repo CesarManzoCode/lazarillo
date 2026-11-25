@@ -58,6 +58,10 @@ Proyecto Lean diminuto (un `def`, un lema por tácticas, un teorema objetivo, un
 10. Estados de meta: un script `lean --run` con `unsafe def main` y `enableInitializersExecution`, `Parser.parseHeader`, `processHeader`, `IO.processCommands` con `infoState.enabled := true`, recorre los `InfoTree`; cada `TacticInfo` da `goalsBefore` (impresos con `Meta.ppGoal`) y `ContextInfo.parentDecl?` da la declaración (`some myDouble_eq`). Funciona en v4.37.0-rc1 y v4.33.0-rc2.
 11. Comparator con una «solución» que usa `sorry` (el export de la propia referencia): el reporte `--json` da `compare_statements: success` y `check_axioms: failure` («Illegal axiom detected: 'sorryAx'»); con una referencia mutada (`3 * n`) frente a la misma solución, `compare_statements: failure`. El paso de comparación se lee por separado del de axiomas.
 12. `/usr/bin/time` es GNU Time 1.10; `-v` imprime `Maximum resident set size (kbytes)` y `Elapsed (wall clock) time`. `unshare -rn` y `bwrap` sin privilegios funcionan.
+13. Observado en K1 (24 nov 2026):
+    - En el fixture `mini`, la clausura desde los `.olean` daba 1,502 nodos y nanoda sobre el export solo del objetivo, 1,503. La diferencia es `Quot.ind`: `leanexport` escribe las cuatro constantes `quot` aunque el grafo solo alcance algunas. Con las aristas entre ellas, 1,503 = 1,503 en `mini` y 52,432 = 52,432 en `pfr`.
+    - En `pfr`, `PFRPalomar.Challenge` y `PFRPalomar.Solution` declaran ambos `Marton.pfr_conjecture` (el primero con `sorry`). Si el reto se lee primero, el objetivo queda sin dependencias del proyecto.
+    - `lean` de v4.37.0-rc1 rechaza un archivo fuera del directorio raíz (`input file … must be contained in root directory`; por defecto, el directorio actual). Con `--root=<carpeta del archivo>` compila y el módulo toma el nombre del archivo.
 
 ## 4. Modelo de lenguaje local
 

@@ -57,11 +57,16 @@ def valueOf? : ConstantInfo → Option Expr
   | .opaqueInfo v => some v.value
   | _ => none
 
+/-- The constants that `init_quot` declares together; the exporter writes all four. -/
+def quotBlock : Array Name := #[``Quot, ``Quot.mk, ``Quot.lift, ``Quot.ind]
+
 /-- Value edges of CONTRACT §2. An inductive depends on its constructors, on every
 type of its block and on the recursors `T.rec` for each `T` of the block plus the
-auxiliary `A.rec_i`, `i = 1..numNested`, named after the first type `A` of the block. -/
+auxiliary `A.rec_i`, `i = 1..numNested`, named after the first type `A` of the block.
+A `quot` constant depends on the other three of `quotBlock`. -/
 def valueDeps (c : ConstantInfo) : Array Name :=
   match c with
+  | .quotInfo _ => quotBlock.filter (· != c.name)
   | .inductInfo v =>
     let recs := v.all.map fun t => Name.str t "rec"
     let nested := match v.all with

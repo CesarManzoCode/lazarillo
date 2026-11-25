@@ -208,6 +208,13 @@ class TrustTest(unittest.TestCase):
         ])
         self.assertEqual(next(o for o in oleans if o.module == "Init.Prelude").size, 111)
 
+    def test_discover_challenge_last(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project, tc_lib = fake_project(Path(tmp))
+            oleans = graph.discover(project, tc_lib, graph.trusted_packages(project), ("Mini",))
+        self.assertEqual([(o.module, o.trusted) for o in oleans][-2:], [("Init.Prelude", True), ("Mini", False)])
+        self.assertEqual(len(oleans), 6)
+
     def test_batches(self):
         olean = lambda m, s: graph.Olean(m, Path(m), s, True)  # noqa: E731
         items = [olean(f"M{i}", 10) for i in range(5)]

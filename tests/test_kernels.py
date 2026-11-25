@@ -273,6 +273,43 @@ class MiniKernelsIntegrationTest(unittest.TestCase):
             self.assertEqual(kernels.parse_checked(log.read_text()), graph_nodes)
             self.assertGreaterEqual(k["nanoda"]["checked"], graph_nodes)
 
+    def test_mini_reference(self):
+        """A reference outside PROJECT_DIR compiles, exports and is accepted by Comparator."""
+        with tempfile.TemporaryDirectory() as tmp:
+            project, out = Path(tmp) / "mini", Path(tmp) / "out"
+            shutil.copytree(FIXTURE, project, ignore=shutil.ignore_patterns(".lake", "lake-manifest.json"))
+            build = subprocess.run(["lake", "build"], cwd=project, env=config.lean_env(),
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.assertEqual(build.returncode, 0, build.stdout)
+            ref = Path(tmp) / "Ref.lean"
+            ref.write_text(MINI_REFERENCE, encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, "-m", "lazarillo", "run", str(project), "Mini.target", "--out", str(out),
+                 "--reference", str(ref), "--stages", "graph,core,kernels,audit"],
+                cwd=REPO, env=runner.stage_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout)
+            a = jsonio.read_json(out / "audit.json")
+            self.assertTrue((out / a["reference"]["export"]).is_file())
+            self.assertEqual(a["frontier_diff"], audit.empty_diff())
+            self.assertEqual(a["comparator"]["judgement"], "accepted", (out / a["comparator"]["report"]).read_text())
+
+
+MINI_REFERENCE = """namespace Mini
+
+structure Pair where
+  fst : Nat
+  snd : Nat
+
+def helper (n : Nat) : Nat :=
+  let p : Pair := ⟨n, n⟩
+  p.fst + p.snd
+
+theorem target (n : Nat) : helper n + helper n = 4 * n := by
+  sorry
+
+end Mini
+"""
+
 
 if __name__ == "__main__":
     unittest.main()

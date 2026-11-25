@@ -272,15 +272,20 @@ def _run_logged(cmd: list[str], cwd: Path, env: dict, log_path: Path) -> int:
 
 def compile_reference(project: Path, out: Path, env: dict) -> list[dict]:
     """`lake env lean Reference.lean -o LazarilloRef.olean` from PROJECT_DIR, then
-    `lean/Extract.lean` over that `.olean`; returns its declarations."""
-    src = out / REFERENCE_SOURCE
+    `lean/Extract.lean` over that `.olean`; returns its declarations.
+
+    `lean` names the module after the file's path under `--root` and rejects a file outside
+    the root, so it compiles a copy `work/audit/LazarilloRef.lean` with that folder as root."""
     olean = out / REFERENCE_DIR / f"{REFERENCE_MODULE}.olean"
     logs = out / "logs"
     work = out / "work" / "audit"
     logs.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
+    src = work / f"{REFERENCE_MODULE}.lean"
+    shutil.copyfile(out / REFERENCE_SOURCE, src)
     log = logs / "audit-reference-compile.log"
-    code = _run_logged(["lake", "env", "lean", str(src), "-o", str(olean)], project, env, log)
+    code = _run_logged(["lake", "env", "lean", f"--root={work}", str(src), "-o", str(olean)],
+                       project, env, log)
     if code != 0:
         raise AuditError(f"reference does not compile (exit {code}, see {log})")
     nd = work / "reference-decls.ndjson"

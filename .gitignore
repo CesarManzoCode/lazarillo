@@ -5,3 +5,4 @@
 /work/
 .lake/
 __pycache__/
+/tests/fixtures/mini/lake-manifest.json
