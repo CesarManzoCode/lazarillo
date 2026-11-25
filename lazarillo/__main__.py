@@ -117,6 +117,12 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_fetch(args) -> int:
+    from . import fetch
+
+    return fetch.main(args.corpora, args.model)
+
+
 def cmd_stage(args) -> int:
     validate_run(args)
     module_name = f"lazarillo.{STAGE_MODULES[args.stage_name]}"
@@ -140,7 +146,7 @@ def not_implemented(args) -> int:
     return 2
 
 
-COMMANDS = {"run": cmd_run, "stage": cmd_stage}
+COMMANDS = {"fetch": cmd_fetch, "run": cmd_run, "stage": cmd_stage}
 
 
 def main(argv=None) -> int:
