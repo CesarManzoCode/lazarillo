@@ -6,7 +6,8 @@ Decisions inside the contract:
 - A node whose module has no source file, or that `Goals.lean` does not report, keeps
   `file`/`range`/`statement` null, `tactic_proof` false and `goals` empty.
 - `nodes` are ordered by depth, then name; `children` and `uses` by name.
-- `llm` stays empty and `explanation` null; the explanation step fills them.
+- After the structure, `explain.explain_tree` fills `llm` and `explanation` and the stage
+  writes `tree.html`; if the model step fails, the stage fails and writes neither file.
 """
 
 import json
@@ -14,9 +15,9 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from . import jsonio
+from . import explain, jsonio
 from .audit import module_file, source_roots
-from .config import REPO, lean_env
+from .config import REPO, ConfigError, lean_env
 from .core import CoreError, load_graph
 from .kernels import KernelsError, run_logged
 
@@ -185,18 +186,18 @@ def collect_goals(files: dict[str, tuple[str, str]], project: Path, out: Path, r
     return by_file
 
 
-def tree_json(args, tree_nodes: list[dict]) -> dict:
+def tree_json(args, tree_nodes: list[dict], llm: dict) -> dict:
     return {
         "format": TREE_FORMAT,
         "target": args.theorem,
         "depth_limit": args.depth,
         "explain_depth": args.explain_depth,
-        "llm": {},
+        "llm": llm,
         "nodes": tree_nodes,
     }
 
 
-def run_tree(args, run=run_goals) -> int:
+def run_tree(args, run=run_goals, explainer=explain.explain_tree) -> int:
     out = Path(args.out).resolve()
     project = Path(args.project_dir).resolve()
     try:
@@ -204,8 +205,11 @@ def run_tree(args, run=run_goals) -> int:
         tree_nodes = structure(nodes, args.theorem, args.depth)
         files = locate(tree_nodes, project)
         merge_goals(tree_nodes, collect_goals(files, project, out, run=run))
-    except (TreeError, CoreError, KernelsError) as e:
+        llm = explainer(tree_nodes, args.explain_depth, out)
+    except (TreeError, CoreError, KernelsError, ConfigError, explain.ExplainError) as e:
         print(f"lazarillo: tree: {e}", file=sys.stderr)
         return 1
-    jsonio.write_json(out / "tree.json", tree_json(args, tree_nodes))
+    data = tree_json(args, tree_nodes, llm)
+    jsonio.write_json(out / "tree.json", data)
+    explain.write_tree_html(out / "tree.html", data)
     return 0

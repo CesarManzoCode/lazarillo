@@ -126,12 +126,18 @@ class GoalsTest(unittest.TestCase):
         log.write_text("fake\n", encoding="utf-8")
         return 0
 
+    def no_llm(self, tree_nodes, explain_depth, out):
+        return {}
+
+    def run_tree(self, args, run=None):
+        return tree.run_tree(args, run=run or self.fake_run, explainer=self.no_llm)
+
     def args(self, depth):
         return SimpleNamespace(out=str(self.out), project_dir=str(self.project), theorem="P.T",
                                depth=depth, explain_depth=1)
 
     def test_run_tree_merges_goals(self):
-        self.assertEqual(tree.run_tree(self.args("all"), run=self.fake_run), 0)
+        self.assertEqual(self.run_tree(self.args("all")), 0)
         # One run per distinct file, in file order.
         self.assertEqual(self.calls, [("P/A.lean", "P.A"), ("P/B.lean", "P.B")])
         data = jsonio.read_json(self.out / "tree.json")
@@ -160,29 +166,29 @@ class GoalsTest(unittest.TestCase):
 
     def test_missing_source_file(self):
         (self.project / "P" / "B.lean").unlink()
-        self.assertEqual(tree.run_tree(self.args(1), run=self.fake_run), 0)
+        self.assertEqual(self.run_tree(self.args(1)), 0)
         self.assertEqual(self.calls, [("P/A.lean", "P.A")])
         by = {n["name"]: n for n in jsonio.read_json(self.out / "tree.json")["nodes"]}
         self.assertIsNone(by["P.b"]["file"])
         self.assertIsNone(by["P.b"]["statement"])
 
     def test_deterministic(self):
-        tree.run_tree(self.args(2), run=self.fake_run)
+        self.run_tree(self.args(2))
         first = (self.out / "tree.json").read_bytes()
-        tree.run_tree(self.args(2), run=self.fake_run)
+        self.run_tree(self.args(2))
         self.assertEqual((self.out / "tree.json").read_bytes(), first)
 
     def test_failed_goals_run(self):
         def failing(project, path, module, dest, log, env):
             log.write_text("boom\n", encoding="utf-8")
             return 1
-        self.assertEqual(tree.run_tree(self.args(1), run=failing), 0)
+        self.assertEqual(self.run_tree(self.args(1), run=failing), 0)
         by = {n["name"]: n for n in jsonio.read_json(self.out / "tree.json")["nodes"]}
         self.assertIsNone(by["P.T"]["statement"])
 
     def test_missing_graph(self):
         (self.out / "graph.ndjson").unlink()
-        self.assertEqual(tree.run_tree(self.args(1), run=self.fake_run), 1)
+        self.assertEqual(self.run_tree(self.args(1)), 1)
 
 
 def find_elan():
@@ -190,12 +196,28 @@ def find_elan():
     return str(local) if local.is_file() else shutil.which("elan")
 
 
+def model_path():
+    return config.work_dir() / "models" / config.load_corpora()["model"]["file"]
+
+
+FAKE_LLAMA = """#!/usr/bin/env python3
+import sys
+print("1.0.0-fake" if "--version" in sys.argv else "Fake explanation.")
+"""
+
+
 @unittest.skipUnless(find_elan(), "elan not available")
 @unittest.skipUnless(os.path.exists(runner.TIME_BIN), "/usr/bin/time not available")
+@unittest.skipUnless(model_path().is_file(), "model not fetched (fetch --model)")
 class MiniTreeIntegrationTest(unittest.TestCase):
     def test_mini_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
             project, out = Path(tmp) / "mini", Path(tmp) / "out"
+            llama = Path(tmp) / "llama-completion"
+            llama.write_text(FAKE_LLAMA, encoding="utf-8")
+            llama.chmod(0o755)
+            env = runner.stage_env()
+            env["LAZARILLO_LLAMA"] = str(llama)
             shutil.copytree(FIXTURE, project, ignore=shutil.ignore_patterns(".lake", "lake-manifest.json"))
             build = subprocess.run(["lake", "build"], cwd=project, env=config.lean_env(),
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -203,9 +225,12 @@ class MiniTreeIntegrationTest(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable, "-m", "lazarillo", "run", str(project), "Mini.target", "--out", str(out),
                  "--stages", "graph,core,tree", "--depth", "all"],
-                cwd=REPO, env=runner.stage_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                cwd=REPO, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             self.assertEqual(proc.returncode, 0, proc.stdout)
             data = jsonio.read_json(out / "tree.json")
+            self.assertEqual(data["llm"]["binary"], str(llama))
+            self.assertEqual(data["llm"]["version"], "1.0.0-fake")
+            self.assertTrue((out / "tree.html").is_file())
             self.assertEqual(data["depth_limit"], "all")
             by = {n["name"]: n for n in data["nodes"]}
             self.assertEqual(data["nodes"][0]["name"], "Mini.target")
@@ -219,7 +244,10 @@ class MiniTreeIntegrationTest(unittest.TestCase):
             self.assertIn("helper", h["statement"])
             self.assertIn("Mini.helper", by)
             for n in data["nodes"]:
-                self.assertIsNone(n["explanation"])
+                if n["depth"] <= 1:
+                    self.assertEqual(n["explanation"], "Fake explanation.")
+                else:
+                    self.assertIsNone(n["explanation"])
                 self.assertTrue(set(n["uses"]) <= set(by))
 
 
