@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -13,12 +14,18 @@ def dumps_ndjson_line(obj) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
 
 
-def _write_text(path, text: str) -> None:
+@contextmanager
+def _atomic(path):
     path = Path(path)
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
+        yield f
     os.replace(tmp, path)
+
+
+def _write_text(path, text: str) -> None:
+    with _atomic(path) as f:
+        f.write(text)
 
 
 def write_json(path, obj) -> None:
@@ -26,7 +33,15 @@ def write_json(path, obj) -> None:
 
 
 def write_ndjson(path, rows) -> None:
-    _write_text(path, "".join(dumps_ndjson_line(r) for r in rows))
+    with _atomic(path) as f:
+        for r in rows:
+            f.write(dumps_ndjson_line(r))
+
+
+def write_lines(path, lines) -> None:
+    with _atomic(path) as f:
+        for line in lines:
+            f.write(line + "\n")
 
 
 def read_json(path):

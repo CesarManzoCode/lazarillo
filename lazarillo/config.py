@@ -40,6 +40,25 @@ def toolchain_dir(toolchain: str, work: Path | None = None) -> Path:
     return (work or work_dir()) / "elan" / "toolchains" / toolchain_dir_name(toolchain)
 
 
+def elan_home(work: Path | None = None) -> Path:
+    """`work/elan` if that elan exists; else the one in `PATH` (`$ELAN_HOME` or `~/.elan`)."""
+    local = (work or work_dir()) / "elan"
+    if (local / "bin" / "elan").is_file():
+        return local
+    env = os.environ.get("ELAN_HOME")
+    return Path(env) if env else Path.home() / ".elan"
+
+
+def lean_env(work: Path | None = None) -> dict:
+    """Environment for every Lean process: `ELAN_HOME=work/elan` and its `bin/` first in `PATH` (CONTRACT §3)."""
+    env = dict(os.environ)
+    local = (work or work_dir()) / "elan"
+    if (local / "bin" / "elan").is_file():
+        env["ELAN_HOME"] = str(local)
+        env["PATH"] = str(local / "bin") + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def parse_depth(value):
     """`all` or a non-negative integer."""
     if value == "all":
