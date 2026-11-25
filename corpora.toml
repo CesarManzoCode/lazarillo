@@ -1,0 +1,90 @@
+[verification]
+toolchain = "leanprover/lean4:v4.37.0-rc1"
+
+[elan]
+installer = "https://raw.githubusercontent.com/leanprover/elan/3cc76985a1becb3c03cd65c1c5007e6f186ae474/elan-init.sh"
+sha256 = "a620ff1641616222c8d37c54845492004bb84d6877cdbc944dd65c1aa685bf53"
+
+[lean4export]
+git = "https://github.com/leanprover/lean4export"
+"v4.33.0-rc2" = "9fb131bb100eb32ccf6836f14e4f8328d13b6792"
+"v4.34.0-rc2" = "cacf989bd75f608700820f6afc595f32e7a99a4d"
+
+[model]
+repo = "Qwen/Qwen3-8B-GGUF"
+revision = "7c41481f57cb95916b40956ab2f0b139b296d974"
+file = "Qwen3-8B-Q4_K_M.gguf"
+sha256 = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+size = 5027783488
+
+[corpus.pfr]
+git = "https://github.com/teorth/pfr"
+commit = "1899ce8ed95fc310cce53d4c7ecfa2beb20ebec4"
+subdir = "."
+toolchain = "leanprover/lean4:v4.37.0-rc1"
+license = "Apache-2.0"
+target = "Marton.pfr_conjecture"
+challenge_module = "PFRPalomar.Challenge"
+stages = ["graph", "core", "kernels", "audit", "tree"]
+depth = "all"
+explain_depth = 1
+
+[corpus.zeta23]
+git = "https://github.com/anthropics/formal-math"
+commit = "11b6c7e3c927df2658f513b6b68ea7f8929c62c5"
+subdir = "zeta23"
+toolchain = "leanprover/lean4:v4.33.0-rc2"
+license = "Apache-2.0"
+target = "two_thirds_simple_on_critical_line"
+challenge_module = "Challenge"
+stages = ["graph", "core", "kernels", "audit", "tree"]
+depth = 2
+explain_depth = 1
+
+[corpus.zetalab]
+git = "https://github.com/teal-sea/zeta-lab"
+commit = "a401821c9608526425f3d4cf7ff8e59bc37e1c79"
+subdir = "lean"
+toolchain = "leanprover/lean4:v4.35.0-rc2"
+license = "MIT"
+target = "ZetaLean.Palomar.pub1_strong_closure"
+challenge_module = "Challenge"
+stages = ["graph", "core", "kernels", "audit"]
+depth = 2
+explain_depth = 1
+
+[corpus.poincare]
+git = "https://github.com/qinz1yang/differential-geometry"
+commit = "13c41a632efb8fbf93101c8a20f2a9214ab33240"
+subdir = "."
+toolchain = "leanprover/lean4:v4.35.0-rc3"
+license = "Apache-2.0"
+target = "DifferentialGeometry.Topology.poincare_conjecture"
+reference = "corpora/poincare/Reference.lean"
+stages = ["graph", "core", "kernels", "audit"]
+depth = 2
+explain_depth = 1
+
+[corpus.ns]
+git = "https://github.com/openai/NavierStokesAndEuler"
+commit = "f9e8bc5b38b6e212696e8a30e3e91517af887bbd"
+subdir = "."
+toolchain = "leanprover/lean4:v4.34.0-rc2"
+license = "Apache-2.0"
+target = "NavierStokes.Comparator.navier_stokes_breakdown_R3"
+challenge_module = "ComparatorChallenges.NavierStokes"
+stages = ["graph", "core", "kernels", "audit", "tree"]
+depth = 2
+explain_depth = 2
+
+[corpus.rh]
+git = "https://github.com/leanprover-community/riemann-hypothesis"
+commit = "4a5b4a2d2a5177a2b6cb876425f0cb4cb6b85061"
+subdir = "."
+toolchain = "leanprover/lean4:v4.37.0-rc1"
+license = "none"
+target = "riemannHypothesis"
+challenge_module = "Challenge"
+stages = ["graph", "core", "audit", "tree"]
+depth = 2
+explain_depth = 2
