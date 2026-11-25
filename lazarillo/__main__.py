@@ -129,6 +129,12 @@ def cmd_measure(args) -> int:
     return measure.main(args.corpus)
 
 
+def cmd_mutate(args) -> int:
+    from . import mutate
+
+    return mutate.main(args)
+
+
 def cmd_blueprint(args) -> int:
     from . import blueprint
 
@@ -158,8 +164,8 @@ def not_implemented(args) -> int:
     return 2
 
 
-COMMANDS = {"fetch": cmd_fetch, "run": cmd_run, "measure": cmd_measure, "blueprint": cmd_blueprint,
-            "stage": cmd_stage}
+COMMANDS = {"fetch": cmd_fetch, "run": cmd_run, "measure": cmd_measure, "mutate": cmd_mutate,
+            "blueprint": cmd_blueprint, "stage": cmd_stage}
 
 
 def main(argv=None) -> int:
