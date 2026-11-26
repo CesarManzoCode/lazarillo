@@ -54,8 +54,10 @@ def elan_home(work: Path | None = None) -> Path:
 
 
 def lean_env(work: Path | None = None) -> dict:
-    """Environment for every Lean process: `ELAN_HOME=work/elan` and its `bin/` first in `PATH` (CONTRACT §3)."""
+    """Environment for every Lean process: `ELAN_HOME=work/elan` and its `bin/` first in `PATH` (CONTRACT §3),
+    and `LEAN_NUM_THREADS` = cores, since the stages run their Lean processes one at a time."""
     env = dict(os.environ)
+    env["LEAN_NUM_THREADS"] = str(os.cpu_count() or 1)
     local = (work or work_dir()) / "elan"
     if (local / "bin" / "elan").is_file():
         env["ELAN_HOME"] = str(local)

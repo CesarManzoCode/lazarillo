@@ -62,6 +62,9 @@ Proyecto Lean diminuto (un `def`, un lema por tácticas, un teorema objetivo, un
     - En el fixture `mini`, la clausura desde los `.olean` daba 1,502 nodos y nanoda sobre el export solo del objetivo, 1,503. La diferencia es `Quot.ind`: `leanexport` escribe las cuatro constantes `quot` aunque el grafo solo alcance algunas. Con las aristas entre ellas, 1,503 = 1,503 en `mini` y 52,432 = 52,432 en `pfr`.
     - En `pfr`, `PFRPalomar.Challenge` y `PFRPalomar.Solution` declaran ambos `Marton.pfr_conjecture` (el primero con `sorry`). Si el reto se lee primero, el objetivo queda sin dependencias del proyecto.
     - `lean` de v4.37.0-rc1 rechaza un archivo fuera del directorio raíz (`input file … must be contained in root directory`; por defecto, el directorio actual). Con `--root=<carpeta del archivo>` compila y el módulo toma el nombre del archivo.
+14. Leído en las toolchains instaladas en `work/elan` en K3 (26 nov 2026):
+    - `LEAN_NUM_THREADS` aparece como cadena en `lib/lean/libleanshared.so` de v4.33.0-rc2 y de v4.37.0-rc1, y Lake lo deja pasar a los procesos que aísla (`envPass` en `src/lean/lake/Lake/CLI/Check.lean`, v4.37.0-rc1). Las fuentes C++ del runtime no vienen en la toolchain: que fije el número de hilos de trabajo de Lean es [hipótesis], no leído en la fuente ni medido.
+    - Lake sin terminal (`useAnsi` falso) imprime una línea `<icono> [i/N] <verbo> <caption>` por trabajo cuya acción es al menos `unpack` (`reportJob` en `Lake/Build/Run.lean`); el verbo de un trabajo compilado es `Built` (`Building` si falló) y el de uno reproducido de la traza, `Replayed` (`JobAction.verb` en `Lake/Build/Job/Basic.lean`). Igual en v4.33.0-rc2 y v4.37.0-rc1. `lake build --no-build` existe en v4.37.0-rc1 (`Lake/CLI/Help.lean`).
 
 ## 4. Modelo de lenguaje local
 

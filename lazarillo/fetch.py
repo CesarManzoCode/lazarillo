@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import urllib.request
@@ -21,6 +22,13 @@ from .config import ConfigError, load_corpora, toolchain_dir, work_dir
 HF_URL = "https://huggingface.co/{repo}/resolve/{revision}/{file}"
 LEAN_COMMIT_RE = re.compile(r"\bcommit ([0-9a-f]{40})\b")
 CHUNK = 1 << 20
+# D14: these corpora come from `lake exe cache get` without compiling, so their `lake build`
+# must be close to a no-op. If it compiles MAX_REBUILT jobs, the cache does not cover it:
+# the build is stopped, noted in the log, and fetch goes on with the `.olean` files present.
+CACHE_ONLY = ("rh",)
+MAX_REBUILT = 1000
+# Lake without a terminal prints one `<icon> [i/N] Built <caption>` line per compiled job (RESEARCH §3.14).
+BUILT_RE = re.compile(r"^\S+ \[\d+/\d+\](?: \(Optional\))? Built ")
 
 JUDGE_LAKEFILE = """name = "judge"
 defaultTargets = ["Judge"]
@@ -65,6 +73,42 @@ def run_logged(cmd: list[str], cwd: str, env: dict, log: Path) -> str:
     return proc.stdout
 
 
+def run_build(cmd: list[str], cwd: str, env: dict, log: Path, limit: int = MAX_REBUILT) -> str:
+    """`run_logged` for `lake build`, streaming its output to `log` line by line. Once Lake
+    reports `limit` compiled jobs, the build (its whole process group) is stopped, the log
+    says so and the call returns instead of raising."""
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(f"$ {shlex.join(cmd)}  (cwd {cwd})\n")
+        f.flush()
+        try:
+            proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, errors="replace", start_new_session=True)
+        except OSError as e:
+            f.write(f"[cannot run: {e}]\n")
+            raise FetchError(f"cannot run {cmd[0]}: {e}") from None
+        built = 0
+        with proc.stdout:
+            for line in proc.stdout:
+                f.write(line)
+                if BUILT_RE.match(line):
+                    built += 1
+                    if built >= limit:
+                        try:
+                            os.killpg(proc.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        break
+        code = proc.wait()
+        if built >= limit:
+            f.write(f"[lazarillo: stopped after {built} compiled jobs; the cache does not cover this build, "
+                    f"continuing with the .olean files present]\n")
+            return ""
+        f.write(f"[exit {code}]\n")
+    if code != 0:
+        raise FetchError(f"`{shlex.join(cmd)}` failed with exit code {code} (see {log})")
+    return ""
+
+
 def depends_on_mathlib(project: Path) -> bool:
     manifest = project / "lake-manifest.json"
     if not manifest.is_file():
@@ -75,11 +119,12 @@ def depends_on_mathlib(project: Path) -> bool:
 
 
 class Fetcher:
-    def __init__(self, cfg: dict, work: Path, run=run_logged, download=http_download):
+    def __init__(self, cfg: dict, work: Path, run=run_logged, download=http_download, build=None):
         self.cfg = cfg
         self.work = Path(work).resolve()
         self.elan_home = self.work / "elan"
         self._run = run
+        self._build = build if build is not None else (run_build if run is run_logged else run)
         self._download = download
         env = dict(os.environ)
         env["ELAN_HOME"] = str(self.elan_home)
@@ -89,6 +134,10 @@ class Fetcher:
 
     def run(self, cmd, cwd=None) -> str:
         return self._run([str(c) for c in cmd], str(cwd or self.work), self.env, self.log)
+
+    def build(self, cmd, cwd) -> str:
+        """`lake build` capped at MAX_REBUILT compiled jobs (CACHE_ONLY corpora)."""
+        return self._build([str(c) for c in cmd], str(cwd), self.env, self.log)
 
     def _note(self, text: str) -> None:
         with open(self.log, "a", encoding="utf-8") as f:
@@ -161,9 +210,11 @@ class Fetcher:
         stamp.unlink(missing_ok=True)
         if depends_on_mathlib(project):
             self.run(["lake", "exe", "cache", "get"], project)
-        self.run(["lake", "build"], project)
+        # Lake reads `srcDir` from the lakefile; the `.olean` files land in `.lake/build/lib/lean` either way.
+        build = self.build if name in CACHE_ONLY else self.run
+        build(["lake", "build"], project)
         if "challenge_module" in c:
-            self.run(["lake", "build", c["challenge_module"]], project)
+            build(["lake", "build", c["challenge_module"]], project)
         stamp.write_text(c["commit"] + "\n", encoding="utf-8")
         return project
 
@@ -240,12 +291,12 @@ class Fetcher:
         return record
 
 
-def main(names, model: bool, cfg=None, work=None, run=run_logged, download=http_download) -> int:
+def main(names, model: bool, cfg=None, work=None, run=run_logged, download=http_download, build=None) -> int:
     cfg = cfg if cfg is not None else load_corpora()
     unknown = [n for n in names if n not in cfg["corpus"]]
     if unknown:
         raise ConfigError(f"unknown corpus: {', '.join(unknown)}")
-    fetcher = Fetcher(cfg, work if work is not None else work_dir(), run, download)
+    fetcher = Fetcher(cfg, work if work is not None else work_dir(), run, download, build)
     status = 0
     for name in dict.fromkeys(names):
         try:

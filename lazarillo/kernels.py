@@ -19,7 +19,7 @@ from pathlib import Path
 from . import jsonio
 from .config import (ALLOWED_AXIOMS, KERNEL_ROOTS, ConfigError, elan_home, lean_env, load_corpora,
                      toolchain_dir_name, work_dir)
-from .core import CoreError, load_graph, read_toolchain
+from .core import CoreError, load_graph, project_or, read_toolchain
 from .graph import DECLARED_ROOTS
 
 KERNELS_FORMAT = "lazarillo-kernels/1"
@@ -259,7 +259,7 @@ def altered(nodes: dict[str, dict], target: str, out: Path, vbin: Path, judge: P
 
 def kernels_json(args, out: Path, project: Path) -> dict:
     target = args.theorem
-    nodes = load_graph(out / "graph.ndjson")
+    nodes = load_graph(out / "graph.ndjson", keep=project_or(target))  # project rows only
     if target not in nodes:
         raise KernelsError(f"target {target} is not in graph.ndjson")
     roots, dropped = split_roots(target, read_declared_roots(out))

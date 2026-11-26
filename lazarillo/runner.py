@@ -1,7 +1,14 @@
-"""Measured stage runner: `/usr/bin/time -v` plus a process-tree VmRSS sampler (CONTRACT §3, §5)."""
+"""Measured stage runner: `/usr/bin/time -v` plus a process-tree VmRSS sampler (CONTRACT §3, §5).
+
+The stage starts in its own session. A descendant whose parent exits is reparented outside
+the tree, but keeps the session id, so each sample counts the tree walk plus every process
+of the session: a process still alive at a sample is counted even if the process that
+started it was born and died between two samples.
+"""
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -43,9 +50,27 @@ def _vmrss_bytes(pid: int) -> int:
     return 0  # gone, or a zombie without VmRSS
 
 
+def session_members(sid: int) -> list[int]:
+    """Processes whose session id (field 6 of `/proc/<pid>/stat`) is `sid`."""
+    out = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as f:
+                stat = f.read()
+        except OSError:
+            continue
+        fields = stat[stat.rfind(")") + 2:].split()
+        if len(fields) > 3 and fields[3] == str(sid):
+            out.append(int(entry))
+    return out
+
+
 def tree_rss_bytes(root: int) -> int:
-    """Sum of VmRSS over `root` and all its descendants."""
-    total, seen, stack = 0, set(), [root]
+    """Sum of VmRSS over `root`, all its descendants and every process of the session `root`
+    leads (orphaned descendants included), each process once."""
+    total, seen, stack = 0, set(), [root, *session_members(root)]
     while stack:
         pid = stack.pop()
         if pid in seen:
@@ -110,11 +135,19 @@ def run_measured(out, name: str, cmd: list[str], env: dict | None = None) -> int
     stop = threading.Event()
     peak = [0]
     t0 = time.monotonic()
-    proc = subprocess.Popen([TIME_BIN, "-v", "-o", str(time_path), *cmd], env=env)
+    proc = subprocess.Popen([TIME_BIN, "-v", "-o", str(time_path), *cmd], env=env, start_new_session=True)
     sampler = threading.Thread(target=_sample, args=(proc.pid, rss_path, t0, stop, peak), daemon=True)
     sampler.start()
     try:
         code = proc.wait()
+    except BaseException:
+        # The stage's own session does not get the terminal's signals: stop it here.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        raise
     finally:
         wall = time.monotonic() - t0
         stop.set()

@@ -180,32 +180,24 @@ def module_file(roots: list[Path], project: Path, module: str) -> Path | None:
     return None
 
 
-def project_modules(project: Path, module: str) -> list[tuple[str, Path]]:
-    """`module` and every module it imports transitively that has a source file, depth first."""
-    roots = source_roots(project)
-    seen, out = set(), []
-
-    def visit(mod):
-        if mod in seen:
-            return
-        seen.add(mod)
-        path = module_file(roots, project, mod)
-        if path is None:
-            return
-        out.append((mod, path))
-        for imp in imports_of(strip_comments(path.read_text(encoding="utf-8"))):
-            visit(imp)
-
-    visit(module)
-    return out
-
-
 def source_scan(project: Path, module: str) -> dict:
+    """Counts over `module` and every project module it imports transitively. The walk is
+    iterative and reads each file once: its text is released before the next file is read."""
+    roots = source_roots(project)
     total = {"files": 0, "sorry": 0, "admit": 0, "axiom": 0, "native_decide": 0}
-    for _, path in project_modules(project, module):
+    seen, stack = {module}, [module]
+    while stack:
+        path = module_file(roots, project, stack.pop())
+        if path is None:
+            continue
+        stripped = strip_comments(path.read_text(encoding="utf-8"))
         total["files"] += 1
-        for k, v in scan_text(strip_comments(path.read_text(encoding="utf-8"))).items():
+        for k, v in scan_text(stripped).items():
             total[k] += v
+        for imp in reversed(imports_of(stripped)):
+            if imp not in seen:
+                seen.add(imp)
+                stack.append(imp)
     return total
 
 
@@ -418,11 +410,17 @@ def audit_json(args, nodes: dict[str, dict], project: Path, out: Path, env=None)
     }
 
 
+def audit_keep(target: str):
+    """Rows of `graph.ndjson` the audit needs: the project, every axiom and the target."""
+    return lambda row: not row["trusted"] or row["kind"] == "axiom" or row["name"] == target
+
+
 def run_audit(args) -> int:
     out = Path(args.out).resolve()
     project = Path(args.project_dir).resolve()
     try:
-        data = audit_json(args, load_graph(out / "graph.ndjson"), project, out)
+        nodes = load_graph(out / "graph.ndjson", keep=audit_keep(args.theorem))
+        data = audit_json(args, nodes, project, out)
     except (AuditError, CoreError, kernels.KernelsError, ConfigError) as e:
         print(f"lazarillo: audit: {e}", file=sys.stderr)
         return 1

@@ -18,7 +18,7 @@ from pathlib import Path
 from . import explain, jsonio
 from .audit import module_file, source_roots
 from .config import REPO, ConfigError, lean_env
-from .core import CoreError, load_graph
+from .core import CoreError, load_graph, project_or
 from .kernels import KernelsError, run_logged
 
 TREE_FORMAT = "lazarillo-tree/1"
@@ -134,8 +134,9 @@ def locate(tree_nodes: list[dict], project: Path) -> dict[str, tuple[str, str]]:
     return dict(sorted(files.items()))
 
 
-def read_goals(path: Path) -> dict[str, dict]:
-    """`Goals.lean` output as name -> row."""
+def read_goals(path: Path, names=None) -> dict[str, dict]:
+    """`Goals.lean` output as name -> row, read line by line; with `names`, only those rows
+    are kept (a file reports every declaration it adds, most of them outside the tree)."""
     rows = {}
     if not Path(path).is_file():
         return rows
@@ -143,7 +144,8 @@ def read_goals(path: Path) -> dict[str, dict]:
         for line in f:
             if line.strip():
                 row = json.loads(line)
-                rows[row["name"]] = row
+                if names is None or row["name"] in names:
+                    rows[row["name"]] = row
     return rows
 
 
@@ -168,8 +170,9 @@ def run_goals(project: Path, file: str, module: str, dest: Path, log: Path, env:
 
 
 def collect_goals(files: dict[str, tuple[str, str]], project: Path, out: Path, run=run_goals,
-                  env: dict | None = None) -> dict[str, dict[str, dict]]:
-    """One `Goals.lean` per distinct file, in series; file -> name -> row."""
+                  env: dict | None = None, wanted: dict[str, set] | None = None) -> dict[str, dict[str, dict]]:
+    """One `Goals.lean` process per distinct file, in series; file -> name -> row. With
+    `wanted` (file -> names), only the rows of those names are kept."""
     work = out / "work" / "tree"
     work.mkdir(parents=True, exist_ok=True)
     (out / "logs").mkdir(parents=True, exist_ok=True)
@@ -182,7 +185,7 @@ def collect_goals(files: dict[str, tuple[str, str]], project: Path, out: Path, r
         code = run(project, path, module, dest, log, env)
         if code != 0:
             print(f"lazarillo: tree: Goals.lean exited {code} on {rel} (see {log})", file=sys.stderr)
-        by_file[rel] = read_goals(dest)
+        by_file[rel] = read_goals(dest, None if wanted is None else wanted.get(rel, set()))
     return by_file
 
 
@@ -201,10 +204,14 @@ def run_tree(args, run=run_goals, explainer=explain.explain_tree) -> int:
     out = Path(args.out).resolve()
     project = Path(args.project_dir).resolve()
     try:
-        nodes = load_graph(out / "graph.ndjson")
+        nodes = load_graph(out / "graph.ndjson", keep=project_or(args.theorem))
         tree_nodes = structure(nodes, args.theorem, args.depth)
+        del nodes
         files = locate(tree_nodes, project)
-        merge_goals(tree_nodes, collect_goals(files, project, out, run=run))
+        wanted = {}
+        for n in tree_nodes:
+            wanted.setdefault(n["file"], set()).add(n["name"])
+        merge_goals(tree_nodes, collect_goals(files, project, out, run=run, wanted=wanted))
         llm = explainer(tree_nodes, args.explain_depth, out)
     except (TreeError, CoreError, KernelsError, ConfigError, explain.ExplainError) as e:
         print(f"lazarillo: tree: {e}", file=sys.stderr)

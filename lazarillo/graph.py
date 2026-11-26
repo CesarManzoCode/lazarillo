@@ -3,6 +3,11 @@
 `lean/Extract.lean` runs in batches of at most 1,000 modules or 2 GiB of
 `.olean`, one Lean process at a time. The batches are combined with names
 interned as integers and adjacency lists in `array('I')` (CSR layout).
+
+Memory is bounded by construction: each batch's NDJSON is read line by line and
+deleted, every name is stored once (later occurrences are looked up and dropped),
+the closure works on record indices (`bytearray` marks, `array('I')` stacks), and
+the outputs are written row by row.
 """
 
 import json
@@ -108,6 +113,7 @@ def discover(project: Path, tc_lib: Path, trusted: set[str], last=()) -> list[Ol
 
 
 def make_batches(oleans, max_modules=MAX_BATCH_MODULES, max_bytes=MAX_BATCH_BYTES) -> list[list[Olean]]:
+    """Consecutive batches within both limits; a module larger than `max_bytes` goes alone."""
     batches, cur, size = [], [], 0
     for o in oleans:
         if cur and (len(cur) >= max_modules or size + o.size > max_bytes):
@@ -218,15 +224,15 @@ class Graph:
         yield from self.type_deps[self.type_off[r]:self.type_off[r + 1]]
         yield from self.value_deps[self.value_off[r]:self.value_off[r + 1]]
 
-    def closure(self, target: str) -> list[int]:
-        """Records reachable from `target` by type and value edges."""
+    def closure(self, target: str) -> array:
+        """Records reachable from `target` by type and value edges, as an `array('I')`."""
         nid = self._ids.get(target)
         if nid is None or self.decl[nid] == NO_DECL:
             raise GraphError(f"target {target} not found in any module")
         seen = bytearray(len(self))
         root = self.decl[nid]
         seen[root] = 1
-        stack, out, missing = [root], [], set()
+        stack, out, missing = array("I", [root]), array("I"), set()
         while stack:
             r = stack.pop()
             out.append(r)
@@ -272,7 +278,10 @@ class Graph:
         return nid is not None and self.decl[nid] != NO_DECL
 
     def project_decls(self) -> list[str]:
-        return sorted(self.name_of(r) for r in range(len(self)) if not self.rec_flags[r] & _TRUSTED)
+        """Sorted project names: one list of references to the interned strings, sorted in place."""
+        names = [self.name_of(r) for r in range(len(self)) if not self.rec_flags[r] & _TRUSTED]
+        names.sort()
+        return names
 
 
 def write_outputs(graph: Graph, target: str, out: Path) -> None:
