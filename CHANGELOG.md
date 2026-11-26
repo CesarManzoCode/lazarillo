@@ -2,6 +2,16 @@
 
 ## Sin publicar
 
+### K2 — Árbol de explicaciones, calibración con el blueprint y mutaciones sembradas
+
+- La etapa `tree` de `run` escribe `tree.json`: un nodo por declaración no interna del núcleo alcanzable desde el teorema hasta la profundidad pedida, con su archivo, líneas, tipo impreso, dependencias, hijos y los estados de meta de cada táctica, sacados del compilador con `lean/Goals.lean`.
+- Explicaciones en inglés escritas por Qwen3-8B (Q4_K_M) con `llama-completion`, sin red ni claves, para los nodos hasta `--explain-depth`; el sha256 del modelo se comprueba contra `corpora.toml` y los prompts y salidas crudas quedan en `logs/`.
+- `tree.html`: el árbol en un solo archivo estático, sin JavaScript ni recursos externos, con `<details>` anidados y enlaces entre nodos.
+- `python3 -m lazarillo blueprint` lee un blueprint en LaTeX y escribe `calibration.json`: los nombres del blueprint que faltan en el grafo y la precisión y exhaustividad del árbol frente al blueprint, en nodos y en aristas.
+- `python3 -m lazarillo mutate` siembra errores (operadores M1–M8) en la referencia aplanada de un corpus, en la frontera, en el enunciado del objetivo y fuera de la frontera, más controles que no cambian el término; juzga cada mutación con Comparator y la compara con la auditoría de lazarillo en `mutations.json`.
+- Medido en `pfr`: calibración de `PFR_conjecture` con nodos 0.940 de precisión y 1.000 de exhaustividad, y aristas 0.879 de precisión por alcanzabilidad (0.390 directa) y 0.815 de exhaustividad; árbol de 424 nodos sin red. Medido en `pfr` y `zeta23`: 53 mutaciones cambian el enunciado según Comparator y lazarillo detecta las 53, sin falsos positivos en las mutaciones fuera de frontera ni en los controles.
+- Correcciones antes del cierre: las explicaciones ya no salen vacías (`--log-disable` suprimía también el texto del modelo) y un `\label` dentro de una prueba del blueprint ya no se toma como nodo.
+
 ### K2 — Decisiones de César sobre los criterios (2026-11-25)
 
 - **Criterio 2 (blueprint ⊆ grafo) exige solo las declaraciones del blueprint que están en la clausura de `PFR_conjecture` según un export independiente hecho con `leanexport`, como lo enuncia la idea.** Descartado: exigir todo `\lean{…}` de las etiquetas alcanzables desde `pfr`, o agregar al grafo aristas que el término no tiene. Por qué: ocho nombres del blueprint no los usa la prueba en Lean y tampoco están en el export que aceptan los kernels. Efecto medido: 103 de 111 nombres están en el export y los 103 están en el grafo; los ocho restantes siguen en `missing_in_graph`.
