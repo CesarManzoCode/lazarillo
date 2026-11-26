@@ -141,6 +141,12 @@ def cmd_blueprint(args) -> int:
     return blueprint.main(args)
 
 
+def cmd_summarize(args) -> int:
+    from . import summarize
+
+    return summarize.main()
+
+
 def cmd_stage(args) -> int:
     validate_run(args)
     module_name = f"lazarillo.{STAGE_MODULES[args.stage_name]}"
@@ -165,7 +171,7 @@ def not_implemented(args) -> int:
 
 
 COMMANDS = {"fetch": cmd_fetch, "run": cmd_run, "measure": cmd_measure, "mutate": cmd_mutate,
-            "blueprint": cmd_blueprint, "stage": cmd_stage}
+            "blueprint": cmd_blueprint, "summarize": cmd_summarize, "stage": cmd_stage}
 
 
 def main(argv=None) -> int:

@@ -6,6 +6,10 @@ Decisions inside the contract:
 - The summary is written even if `run` fails (D07: a negative result is a result); fields of
   outputs that were not produced are `null`.
 - `kernels` keeps the verdicts of `kernels.json` without the log paths, like `stages`.
+- A corpus with `license = "none"` (RH, D13) gets a summary with figures only: `axioms` is the
+  number of axioms and `kernels` loses its strings (e.g. `altered.removed`), so no name or text
+  taken from the corpus is published. The identifiers from `corpora.toml` and the Comparator
+  verdict stay.
 """
 
 import shutil
@@ -40,13 +44,22 @@ def _without_paths(obj: dict) -> dict:
     return {k: v for k, v in obj.items() if k not in PATH_KEYS}
 
 
+def figures_only(summary: dict) -> dict:
+    axioms = summary["axioms"]
+    kernels = summary["kernels"]
+    return dict(summary,
+                axioms=len(axioms) if axioms is not None else None,
+                kernels={k: {f: v for f, v in r.items() if not isinstance(v, str)} for k, r in kernels.items()}
+                        if kernels is not None else None)
+
+
 def summary_json(name: str, c: dict, run_dir: Path) -> dict:
     core = _read(run_dir / "core.json") or {}
     audit = _read(run_dir / "audit.json")
     kernels = _read(run_dir / "kernels.json")
     timings = _read(run_dir / "timings.json") or {}
     comparator = audit.get("comparator") if audit else None
-    return {
+    summary = {
         "format": SUMMARY_FORMAT,
         "corpus": name,
         "git": c["git"],
@@ -62,6 +75,7 @@ def summary_json(name: str, c: dict, run_dir: Path) -> dict:
         "comparator": comparator["judgement"] if comparator else None,
         "stages": {s: _without_paths(t) for s, t in sorted(timings.get("stages", {}).items())},
     }
+    return figures_only(summary) if c["license"] == "none" else summary
 
 
 def main(name: str, cfg=None, work=None) -> int:
