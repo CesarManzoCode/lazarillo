@@ -131,20 +131,22 @@ class CalibrationTest(unittest.TestCase):
         result = blueprint.calibrate(self.bp, self.graph, PROJECT_DECLS, TREE_USES, "root", "P.Root")
         # PB = {root, l1, l2, l3, l4} (m is Mathlib only);
         # BE = {(root,l1), (root,l2), (l1,l3), (l2,l3), (l2,l4)}; PE ∩ BE = {(root,l1), (l1,l3)}.
+        # BR adds (root,l3) and (root,l4) (through l1 or l2); PE ∩ BR also has (root,l3);
+        # (l1,l2) has no blueprint path and (l2,off), (off,l3) leave PB.
         self.assertEqual(result, {
             "format": "lazarillo-calibration/1",
             "root_label": "root",
             "root_decl": "P.Root",
             "missing_in_graph": ["P.v", "P.y"],
             "nodes": {"precision": 4 / 5, "recall": 4 / 5},
-            "edges": {"precision": 2 / 6, "recall": 2 / 5},
+            "edges": {"precision": 3 / 6, "precision_direct": 2 / 6, "recall": 2 / 5},
         })
 
     def test_empty_denominators(self):
         result = blueprint.calibrate(self.bp, self.graph, PROJECT_DECLS, TREE_USES, "nope", "P.nope")
         self.assertEqual(result["missing_in_graph"], [])
         self.assertEqual(result["nodes"], {"precision": 0.0, "recall": 0.0})
-        self.assertEqual(result["edges"], {"precision": 0.0, "recall": 0.0})
+        self.assertEqual(result["edges"], {"precision": 0.0, "precision_direct": 0.0, "recall": 0.0})
 
 
 class CommandTest(unittest.TestCase):

@@ -121,15 +121,56 @@ class TestFrontierCandidates(unittest.TestCase):
         self.assertEqual(mutate.candidate_id(12), "m012")
 
     def test_operators_skip_longer_tokens(self):
-        s = "a <;> b => c <| d >>= e ≤ f + ℝ≥0 + p.1 + x2 + 1.5 + 7"
+        s = "a <;> b => c <| d >>= e ≤ f ∘ ℝ≥0 ∘ p.1 ∘ x2 ∘ 1.5 ∘ 7"
         got = [(op, s[a:b], r) for op, a, b, r in mutate.occurrences(s, 0, len(s))]
         self.assertEqual(got, [("M1", "7", "8"), ("M2", "≤", "<")])
+
+    def test_new_operators(self):
+        s = "z.re = (f x).im ∧ A ∩ B ∪ C ≠ D ∧ a + b - c * d / e ∧ Complex.real"
+        got = [(op, s[a:b], r) for op, a, b, r in mutate.occurrences(s, 0, len(s))]
+        self.assertEqual(got, [("M3", "∧", "∨"), ("M3", "∧", "∨"), ("M3", "∧", "∨"),
+                               ("M4", ".re", ".im"), ("M4", ".im", ".re"),
+                               ("M5", "∩", "∪"), ("M5", "∪", "∩"),
+                               ("M6", "=", "≠"), ("M6", "≠", "="),
+                               ("M7", "+", "-"), ("M7", "-", "+"),
+                               ("M8", "*", "/"), ("M8", "/", "*")])
+
+    def test_new_operators_skip_longer_tokens(self):
+        s = "x := y == z => w <= v >= u ∧ f (-34) ∧ Type* ∧ a -> b ∧ p.ree ∧ h.im'"
+        got = [(op, s[a:b]) for op, a, b, r in mutate.occurrences(s, 0, len(s)) if op != "M3"]
+        self.assertEqual(got, [("M1", "34"), ("M2", "<="), ("M2", ">=")])
 
     def test_mask_keeps_offsets(self):
         text = 'a /- x /- y -/ 1 -/ b -- 2\n"3 \\" 4" 5'
         masked = mutate.mask(text)
         self.assertEqual(len(masked), len(text))
         self.assertEqual(masked.split(), ["a", "b", "5"])
+
+
+class TestTarget(unittest.TestCase):
+    def test_statement_block(self):
+        block = mutate.statement_block(REFERENCE, "Demo.goal")
+        self.assertEqual(REFERENCE[block.body:block.end], " (n : Fin 7) (h : Demo.small n.val) : Demo.big n ")
+        self.assertIsNone(mutate.statement_block(REFERENCE, "Demo.small"))
+        self.assertIsNone(mutate.statement_block(REFERENCE, "goal"))
+
+    def test_target_candidates(self):
+        stmt = "(n : Fin 7) (h : Demo.small n.val) : Demo.big n := by"
+        head = "theorem Demo.goal " + stmt
+        got = mutate.target_candidates(REFERENCE, "Demo.goal")
+        self.assertEqual(got, [
+            mutate.Candidate("Demo.goal", "M1", False, expected(head, head.replace("Fin 7", "Fin 8"))),
+            mutate.Candidate("Demo.goal", "C0", False,
+                             expected(head, "theorem Demo.goal\n  " + C0 + "\n  " + stmt)),
+        ])
+        self.assertEqual(mutate.target_candidates(REFERENCE, "Demo.nope"), [])
+
+    def test_target_differs(self):
+        rows = [dict(NODES["Demo.small"], name="Demo.goal")]
+        nodes = {"Demo.goal": dict(NODES["Demo.small"], name="Demo.goal")}
+        self.assertFalse(mutate.target_differs(nodes, "Demo.goal", rows))
+        self.assertTrue(mutate.target_differs(nodes, "Demo.goal", [dict(rows[0], hash_type="1" * 16)]))
+        self.assertTrue(mutate.target_differs(nodes, "Demo.goal", []))
 
 
 class TestLeaves(unittest.TestCase):

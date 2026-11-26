@@ -9,7 +9,8 @@ Decisions inside the contract:
 - A following `proof` belongs to the last labelled top-level environment of the same file;
   unlabelled environments in between do not break the link, a new file does. A `proof` is
   never a node: a `\\label` inside it (e.g. of a nested `equation`) is ignored.
-- `BE` never contains a self edge `(a, a)`, as `PE` cannot.
+- `BE` never contains a self edge `(a, a)`, as `PE` cannot; neither does `BR`, where the
+  intermediate labels of a path may lie outside `PB`.
 - A missing root (label not in the blueprint, declaration not in the graph or the tree) gives
   empty sets, so the affected values are 0.0; the command still writes `calibration.json`.
 """
@@ -186,13 +187,16 @@ def calibrate(bp, graph, project_decls, tree_uses, root_label, root_decl) -> dic
     pb = {lab for lab in b_labels if lab in bp and bp[lab]["lean"] & project}
     pe = projected_edges(tree_uses, t_nodes, u_set, label_map)
     be = {(a, b) for a in pb for b in bp[a]["uses"] if b in pb and a != b}
+    br = {(a, b) for a in pb for b in blueprint_closure(bp, a) if b in pb and a != b}
     return {
         "format": CALIBRATION_FORMAT,
         "root_label": root_label,
         "root_decl": root_decl,
         "missing_in_graph": missing_in_graph(bp, b_labels & bp.keys(), graph, root_decl),
         "nodes": {"precision": _ratio(len(pt & pb), len(pt)), "recall": _ratio(len(pt & pb), len(pb))},
-        "edges": {"precision": _ratio(len(pe & be), len(pe)), "recall": _ratio(len(pe & be), len(be))},
+        "edges": {"precision": _ratio(len(pe & br), len(pe)),
+                  "precision_direct": _ratio(len(pe & be), len(pe)),
+                  "recall": _ratio(len(pe & be), len(be))},
     }
 
 

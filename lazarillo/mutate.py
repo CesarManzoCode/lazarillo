@@ -9,13 +9,18 @@ Decisions inside the contract:
   dropped. Its full name is the open `namespace`s plus the declared identifier (`_root_.`
   resets it); `section`, `mutual` and `end` are tracked so closed namespaces do not leak.
 - The body of a definition starts after the first `:=` outside brackets; without one (pattern
-  matching, `where` structures) it starts after the declared identifier. Operators only match
-  outside comments and string literals.
+  matching, `where` structures) it starts after the declared identifier. The statement of the
+  target is the text of its `theorem`/`lemma` block from the declared identifier to the first
+  `:=` outside brackets (binders, hypotheses and conclusion; the `sorry` proof is left alone).
+  Operators only match outside comments and string literals.
 - M1 rewrites ASCII decimal literals not glued to an identifier, a `.` or a `'` (`p.1`, `x2`
   and `1.5` stay); M2 rewrites `<`, `≤`, `<=`, `>`, `≥`, `>=` when they are not part of a
   longer operator (`<|`, `=>`, `<;>`, `>>=` stay) and not the `ℝ≥0` notation; `<=` and `>=`
-  become `<` and `>`. Candidates of one site come in the order M1, M2, M3 (each by position),
-  then C0.
+  become `<` and `>`. M4 swaps the field projections `.re` and `.im` written after an
+  identifier or a closing bracket; M5 swaps `∩` and `∪`; M6 swaps `=` and `≠` when `=` is not
+  part of a longer operator (`:=`, `==`, `=>`, `<=`, `>=` stay); M7 swaps `+` and `-`, and M8
+  `*` and `/`, only with a space on both sides (binary uses; `-34`, `Type*` and `->` stay).
+  Candidates of one site come in the order M1 … M8 (each by position), then C0.
 - C0 inserts the line `-- lazarillo: C0 control` before the second line of the body; for a
   body on one line, the rest of that line moves below the comment.
 - Frontier sites are the non-internal frontier names whose block is found in the reference, in
@@ -23,8 +28,13 @@ Decisions inside the contract:
   already declares (a copy would clash) or whose block is not found in their module's file.
   The copy goes inside `noncomputable section` within its namespace: that keeps
   noncomputable definitions compiling and does not change any term.
-- Ids follow the order in which candidates are tried: every frontier candidate, then the
-  out-of-frontier ones until 10 have compiled; `candidates` counts all of them.
+- The target site is the target's own statement in the reference, after the frontier sites; its
+  entries have `in_frontier` false and a non-detected one is classified `no_change`. Its
+  detection compares the type fingerprint of the target in the mutated reference with the
+  graph's (`target_changed` in the mutation's `audit.json`; a missing target counts as changed).
+- Ids follow the order in which candidates are tried: every frontier candidate, every target
+  candidate, then the out-of-frontier ones until 10 have compiled; `candidates` counts all of
+  them.
 - `OUT/<id>/` is emptied before each candidate. A compiled candidate whose export, Comparator
   run or extraction cannot start is an error of the command (exit 1); Comparator rejecting is
   a result.
@@ -51,6 +61,9 @@ C0_LINE = "-- lazarillo: C0 control"
 DEF_RE = re.compile(r"^([ \t]*)(?:@\[[^\]\n]*\]\s*)?"
                     r"(?:(?:private|protected|noncomputable|partial|unsafe|nonrec|public|meta)\s+)*"
                     r"(?:def|abbrev)\s+([^\s(\[{:]+)")
+THEOREM_RE = re.compile(r"^([ \t]*)(?:@\[[^\]\n]*\]\s*)?"
+                        r"(?:(?:private|protected|noncomputable|unsafe|nonrec|public|meta)\s+)*"
+                        r"(?:theorem|lemma)\s+([^\s(\[{:]+)")
 NAMESPACE_RE = re.compile(r"^\s*namespace\s+(\S+)")
 SECTION_RE = re.compile(r"^\s*(?:@\[[^\]\n]*\]\s*)?(?:(?:noncomputable|public|private)\s+)*section(?:\s|$)")
 MUTUAL_RE = re.compile(r"^\s*mutual(?:\s|$)")
@@ -60,8 +73,15 @@ CONTINUATION_RE = re.compile(r"^\s*(?:\||(?:where|termination_by|decreasing_by|d
 M1_RE = re.compile(r"(?<![\w.'])(?<!ℝ≥)[0-9]+(?![\w.'])")
 M2_RE = re.compile(r"<=|>=|<|>|≤|≥")
 M3_RE = re.compile(r"[∧∨]")
+M4_RE = re.compile(r"(?<=[\w')\]}⟩])\.(?:re|im)(?![\w'])")
+M5_RE = re.compile(r"[∩∪]")
+M6_RE = re.compile(r"=|≠")
+M7_RE = re.compile(r"(?<= )[+-](?= )")
+M8_RE = re.compile(r"(?<= )[*/](?= )")
 OP_CHARS = frozenset("<>=-|$*&!:+~^%/;?@\\")
-SWAP = {"<": "≤", "≤": "<", "<=": "<", ">": "≥", "≥": ">", ">=": ">", "∧": "∨", "∨": "∧"}
+SWAP = {"<": "≤", "≤": "<", "<=": "<", ">": "≥", "≥": ">", ">=": ">", "∧": "∨", "∨": "∧",
+        ".re": ".im", ".im": ".re", "∩": "∪", "∪": "∩", "=": "≠", "≠": "=", "+": "-", "-": "+",
+        "*": "/", "/": "*"}
 OPEN_BRACKETS = "([{⟨"
 CLOSE_BRACKETS = ")]}⟩"
 
@@ -150,14 +170,15 @@ def _assign(masked: str, start: int, end: int) -> int | None:
     return None
 
 
-def locate(text: str, name: str) -> Block | None:
-    """The block of `def`/`abbrev` declaring the full name `name` in `text`, if any."""
+def locate(text: str, name: str, decl_re: re.Pattern = DEF_RE) -> Block | None:
+    """The block of `def`/`abbrev` (or what `decl_re` matches) declaring the full name `name`
+    in `text`, if any."""
     masked = mask(text)
     lines = masked.splitlines(keepends=True)
     offs = _offsets(lines)
     scopes: list[list[str]] = []
     for i, line in enumerate(lines):
-        m = DEF_RE.match(line)
+        m = decl_re.match(line)
         if m:
             ident = m.group(2)
             if ident.startswith("_root_."):
@@ -191,24 +212,45 @@ def _block(masked: str, lines: list[str], offs: list[int], i: int, m: re.Match) 
     return Block(start, end, after_name if body is None else body, indent)
 
 
+def statement_block(text: str, name: str) -> Block | None:
+    """The statement of `theorem <name>`: `body` is just after the declared identifier and `end`
+    is the `:=` of its proof."""
+    block = locate(text, name, THEOREM_RE)
+    if block is None:
+        return None
+    masked = mask(text)
+    head = block.start + THEOREM_RE.match(masked[block.start:block.end]).end()
+    assign = _assign(masked, head, block.end)
+    if assign is None:
+        return None
+    return Block(block.start, assign - 2, head, block.indent)
+
+
 # --- operators -------------------------------------------------------------------
 
-def _m2_ok(masked: str, a: int, b: int) -> bool:
+def _standalone(masked: str, a: int, b: int) -> bool:
     before = masked[a - 1] if a > 0 else " "
     after = masked[b] if b < len(masked) else " "
-    if before in OP_CHARS or after in OP_CHARS:
+    return before not in OP_CHARS and after not in OP_CHARS
+
+
+def _m2_ok(masked: str, a: int, b: int) -> bool:
+    if not _standalone(masked, a, b):
         return False
-    return not (masked[a:b] == "≥" and before == "ℝ")
+    return not (masked[a:b] == "≥" and masked[a - 1:a] == "ℝ")
 
 
 def occurrences(masked: str, start: int, end: int) -> list[tuple[str, int, int, str]]:
-    """`(operator, a, b, replacement)` for every M1, M2, M3 site in `masked[start:end]`,
+    """`(operator, a, b, replacement)` for every M1 … M8 site in `masked[start:end]`,
     by operator and then by position."""
     region = masked[:end]
     out = [("M1", m.start(), m.end(), str(int(m.group()) + 1)) for m in M1_RE.finditer(region, start)]
     out += [("M2", m.start(), m.end(), SWAP[m.group()]) for m in M2_RE.finditer(region, start)
             if _m2_ok(masked, m.start(), m.end())]
-    out += [("M3", m.start(), m.end(), SWAP[m.group()]) for m in M3_RE.finditer(region, start)]
+    for op, regex in (("M3", M3_RE), ("M4", M4_RE), ("M5", M5_RE), ("M6", M6_RE), ("M7", M7_RE),
+                      ("M8", M8_RE)):
+        out += [(op, m.start(), m.end(), SWAP[m.group()]) for m in regex.finditer(region, start)
+                if op != "M6" or _standalone(masked, m.start(), m.end())]
     return out
 
 
@@ -248,6 +290,12 @@ def frontier_candidates(ref_text: str, frontier: list[str], nodes: dict[str, dic
         if block is not None:
             out += site_candidates(ref_text, block, name, True)
     return out
+
+
+def target_candidates(ref_text: str, target: str) -> list[Candidate]:
+    """Every operator occurrence of the target's statement in the reference, then the control."""
+    block = statement_block(ref_text, target)
+    return [] if block is None else site_candidates(ref_text, block, target, False)
 
 
 def leaf_defs(nodes: dict[str, dict], core: list[str], frontier: list[str]) -> list[str]:
@@ -328,10 +376,18 @@ def compare_statements(text: str):
         return None
 
 
-def classify(statement_changed: bool, in_frontier: bool) -> str:
+def classify(statement_changed: bool, in_statement: bool) -> str:
+    """`in_statement`: the site is a frontier definition or the target's statement."""
     if statement_changed:
         return "statement_change"
-    return "no_change" if in_frontier else "out_of_frontier"
+    return "no_change" if in_statement else "out_of_frontier"
+
+
+def target_differs(nodes: dict[str, dict], target: str, ref_rows: list[dict]) -> bool:
+    """The target's type fingerprint in the reference differs from the graph's, or the
+    reference does not declare it."""
+    row = next((r for r in ref_rows if r["name"] == target), None)
+    return row is None or row["hash_type"] != nodes[target]["hash_type"]
 
 
 # --- running ---------------------------------------------------------------------
@@ -419,9 +475,11 @@ class Mutator:
         with open(decls, encoding="utf-8") as f:
             rows = [json.loads(line) for line in f if line.strip()]
         diff = audit.frontier_diff(self.nodes, self.frontier, rows)
-        changed = bool(diff["changed"] or diff["missing_in_reference"])
-        classification = classify(changed, cand.in_frontier)
+        target_changed = target_differs(self.nodes, self.target, rows)
+        changed = bool(diff["changed"] or diff["missing_in_reference"] or target_changed)
+        classification = classify(changed, cand.in_frontier or cand.site == self.target)
         jsonio.write_json(d / "audit.json", {"target": self.target, "frontier_diff": diff,
+                                             "target_changed": target_changed,
                                              "statement_changed": changed,
                                              "classification": classification})
         return {"id": cid, "site": cand.site, "operator": cand.operator,
@@ -431,17 +489,19 @@ class Mutator:
     def mutations_json(self) -> dict:
         entries, tried, leaves = [], 0, 0
         front = frontier_candidates(self.ref_text, self.frontier, self.nodes)
+        stmt = target_candidates(self.ref_text, self.target)
         rest = leaf_candidates(self.ref_text, self.nodes, self.core, self.frontier,
                                source_reader(self.project))
-        for cid, cand in numbered(chain(front, rest)):
-            if not cand.in_frontier and leaves >= OUT_OF_FRONTIER:
+        for cid, cand in numbered(chain(front, stmt, rest)):
+            leaf = not cand.in_frontier and cand.site != self.target
+            if leaf and leaves >= OUT_OF_FRONTIER:
                 break
             tried += 1
             entry = self.candidate(cid, cand)
             if entry is None:
                 continue
             entries.append(entry)
-            if not cand.in_frontier:
+            if leaf:
                 leaves += 1
         return {"format": MUTATIONS_FORMAT, "corpus": corpus_name(self.project, self.run),
                 "target": self.target, "candidates": tried, "compiled": len(entries),
